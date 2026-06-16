@@ -4,26 +4,21 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reap-cli"
-version = "1.0.0"
+version = "1.1.0"
+description = "A fast, beautiful, and modular website archiver."
+readme = "README.md"
 authors = [
     { name = "Attaya Arka", email = "attayaarka76p@gmail.com" }
 ]
-description = "A fast, beautiful, and modern CLI website archiver powered by wget/wget2."
-readme = "README.md"
 requires-python = ">=3.8"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Environment :: Console",
-]
 dependencies = [
     "rich>=12.0.0",
 ]
 
-[project.urls]
-"Homepage" = "https://github.com/arxivius/reap"
-"Bug Tracker" = "https://github.com/arxiviud/reap/issues"
+[project.optional-dependencies]
+# Optional features can be installed separately to keep the core light
+optimize = ["Pillow>=9.0.0"]
+pdf = ["playwright>=1.20.0"]
 
 [project.scripts]
 reap = "reap.main:main"
