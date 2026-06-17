@@ -1,10 +1,11 @@
 [build-system]
-requires = ["setuptools>=61.0.0"]
+# Constrain setuptools below 77.0.0 to prevent incompatible Metadata 2.4 generation
+requires = ["setuptools>=61.0.0,<77.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "reap-web-harvester"
-version = "1.1.3"
+version = "1.1.4"
 description = "A fast, beautiful, and modular website archiver."
 readme = "README.md"
 authors = [
@@ -24,4 +25,4 @@ pdf = ["playwright>=1.20.0"]
 reap = "reap.main:main"
 
 [tool.setuptools]
-packages = ["reap"]     
+packages = ["reap"]
