@@ -21,3 +21,6 @@ wheels/
 # Local engines / logs
 reap-engine.log
 wget-log
+
+# Internal Documents
+PROJECT.md

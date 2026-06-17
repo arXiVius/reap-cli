@@ -32,6 +32,7 @@ def archive_site(url, output_dir, fast_mode, threads):
     destination = output_dir if output_dir else parsed_url.netloc
     log_file = "reap-engine.log"
 
+    # Strict silence configuration
     cmd = [
         engine, "--mirror", "--convert-links", "--page-requisites",
         "--no-parent", "--adjust-extension", "--span-hosts",
@@ -48,16 +49,37 @@ def archive_site(url, output_dir, fast_mode, threads):
     cmd.append(url)
 
     if USE_RICH:
-        panel_content = f"[bold]Target URL:[/bold] {url}\n[bold]Output:[/bold] {destination}\n[bold]Engine:[/bold] {engine}"
-        console.print(Panel(panel_content, title="[bold blue]Reap Scraper[/bold blue]", border_style="blue", expand=False))
-        try:
-            with console.status("[bold green]Crawling assets...", spinner="dots"):
-                subprocess.run(cmd, check=True)
-            print_msg("Scrape operation completed successfully.", "success")
-        except subprocess.CalledProcessError:
-            print_msg(f"Finished with issues. Check {log_file} for details.", "warning")
+        panel_content = (
+            f"[bold gold3]Target URL:[/bold gold3] {url}\n"
+            f"[bold gold3]Output Dir:[/bold gold3] {destination}\n"
+            f"[bold gold3]Scrape Engine:[/bold gold3] {engine}\n"
+            f"[bold gold3]Verbose Log:[/bold gold3] {log_file}"
+        )
+        console.print(Panel(panel_content, title="[bold gold3]Reap Scraper[/bold gold3]", border_style="gold3", expand=False))
+        
+        # Open the log file to dump standard output streams and keep terminal quiet
+        with open(log_file, "a", encoding="utf-8") as f_log:
+            try:
+                # Use Popen to allow background task killing on manual interrupt
+                process = subprocess.Popen(cmd, stdout=f_log, stderr=f_log)
+                
+                with console.status("[bold gold3]Harvesting assets from site structure...", spinner="aesthetic") as status:
+                    process.wait()
+                
+                if process.returncode == 0:
+                    print_msg("Scrape operation completed successfully.", "success")
+                else:
+                    print_msg(f"Completed with warnings. System exited with code {process.returncode}.", "warning")
+            except KeyboardInterrupt:
+                process.terminate()  # Safely terminate the running wget process
+                raise KeyboardInterrupt  # Pass the exception up to main handler
     else:
         print(f"Scraping {url}...")
-        subprocess.run(cmd)
+        try:
+            process = subprocess.Popen(cmd)
+            process.wait()
+        except KeyboardInterrupt:
+            process.terminate()
+            raise KeyboardInterrupt
 
     return destination
