@@ -1,8 +1,8 @@
 # 🌾 reap v2
 
-> A fast, beautiful, and modern offline web reconstruction engine.
+> A deterministic web reconstruction and deployment engine.
 
-`reap` v2 is an advanced CLI tool built purely in Python that completely replaces wget wrappers. It's an offline web reconstruction system that intelligently crawls websites, resolves and extracts all modern web assets (including SPA assets and CDNs like Framer/Webflow), rewrites the broken web structure for local navigation, and even emulates modern SPA behavior. Downloaded sites behave exactly like they are still online.
+`reap` is a modern CLI tool built purely in Python that intelligently crawls websites, resolves and extracts all modern web assets (including SPA assets and CDNs like Framer/Webflow), rewrites the broken web structure for local navigation, and even emulates modern SPA behavior. Downloaded sites behave exactly like they are still online.
 
 ---
 
@@ -17,6 +17,7 @@
 * **🧪 JS Snapshot Mode (Optional)** — Utilizes headless Playwright to snapshot dynamically rendered JavaScript dashboards before scraping.
 
 ## 🧭 Mode System
+
 * `--mode mirror` - Exact replica (full fidelity)
 * `--mode app` - SPA-aware reconstruction (recommended, default)
 * `--mode reader` - Clean article extraction (removes nav, footer, scripts)
@@ -33,10 +34,33 @@
 ### Install from Source
 
 ```bash
-git clone https://github.com/yourusername/reap.git
-cd reap
+git clone https://github.com/arXiVius/reap-cli.git
+cd reap-cli
 pip install .
 ```
+
+*Note: For maximum stability, it is recommended to install `reap-cli` in an isolated virtual environment (like `venv` or `pipx`) to prevent dependency conflicts with system packages.*
+
+### Optional Dependencies
+
+```bash
+# Image optimization (WebP conversion)
+pip install 'reap-cli[optimize]'
+
+# JS snapshot mode (headless browser rendering)
+pip install 'reap-cli[pdf]'
+playwright install
+```
+
+---
+
+## 🧭 Recommended Usage Path
+
+Because `reap` has many flags, here is the recommended setup depending on your goal:
+
+* **Basic offline mirror**: `reap https://example.com --mode mirror`
+* **Modern React/Vue/SPA sites**: `reap https://example.com --mode app --js`
+* **Fast lightweight capture**: `reap https://example.com --fast`
 
 ---
 
@@ -62,8 +86,6 @@ reap https://example.com --mode fast
 
 ### Full Interactive JS Snapshot Pipeline
 
-Requires Playwright installed: `pip install playwright && playwright install`
-
 ```bash
 reap https://example.com --mode app --js
 ```
@@ -72,6 +94,25 @@ reap https://example.com --mode app --js
 
 ```bash
 reap https://example.com --serve
+```
+
+### Identity & Credits
+
+```bash
+reap --version        # Version with author credit
+reap --about          # Full project info panel
+reap --help           # Structured help with identity header
+```
+
+---
+
+## 🏗️ CLI Structure
+
+```
+reap <url>                # main tool
+reap --help               # structured, light identity
+reap --version            # full credit
+reap --about              # full project info
 ```
 
 ---
@@ -83,4 +124,5 @@ MIT License
 ---
 
 ## ⚠️ Known Limitations & Risks
+
 Please review the [LIMITATIONS.md](LIMITATIONS.md) file for a detailed risk map regarding JavaScript-generated content, SPA routing edge cases, dynamic APIs, and offline behavior mismatches.

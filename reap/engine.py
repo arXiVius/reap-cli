@@ -11,6 +11,7 @@ import mimetypes
 import tempfile
 from urllib.parse import urlparse, urljoin, unquote, urlunparse, parse_qs, urlencode
 from bs4 import BeautifulSoup
+from reap import __version__
 from reap.utils import print_msg
 
 try:
@@ -110,6 +111,9 @@ class ReapV2Engine:
         self.base_netloc = self.parsed_start.netloc
         
         self.visited = set()
+        self.route_map = {}
+        self.asset_deps = {}
+        self.failed_urls = []
         self.page_queue = asyncio.Queue()
         self.task_queue = asyncio.PriorityQueue() # Smart Parallel Pipeline
         
@@ -274,9 +278,13 @@ class ReapV2Engine:
 
     async def process_page(self, url, depth):
         html = await self.fetch_page(url)
-        if not html: return
+        if not html:
+            self.failed_urls.append(url)
+            return
         
         final_fs_path, local_url_path = get_page_local_path(url, self.output_dir, mode=self.mode)
+        self.route_map[url] = local_url_path
+        self.asset_deps[url] = []
         soup = BeautifulSoup(html, 'lxml')
         
         for script in soup.find_all('script'):
@@ -301,18 +309,19 @@ class ReapV2Engine:
             a['href'] = get_relative_url(local_url_path, target_url_path) + anchor
             
         # Extract assets and await their futures (Dependency Readiness Barrier)
-        asset_replacements = [] # list of (tag, attr, future)
-        
+        asset_replacements = []  # list of (tag, attr, abs_url)
+
         def queue_asset(tag, attr, val):
-            if val.startswith('data:'): return
+            if val.startswith('data:'):
+                return
             abs_url = normalize_url(urljoin(url, val))
-            
+
             if self.fast_mode and any(abs_url.lower().endswith(ext) for ext in HEAVY_EXTENSIONS):
                 tag[attr] = ""
                 return
-                
-            future = self.get_or_download_asset(abs_url, depth)
-            asset_replacements.append((tag, attr, future))
+
+            asset_replacements.append((tag, attr, abs_url))
+            self.asset_deps[url].append(abs_url)
 
         asset_tags = {'img': ['src', 'data-src'], 'link': ['href'], 'script': ['src'], 'source': ['src'], 'video': ['src', 'poster'], 'audio': ['src']}
         for tag_name, attrs in asset_tags.items():
@@ -330,12 +339,13 @@ class ReapV2Engine:
             
         # Await all dependencies for this page
         if asset_replacements:
-            futures = [f for _, _, f in asset_replacements]
-            results = await asyncio.gather(*futures, return_exceptions=True)
-            
-            for (tag, attr, _), final_asset_url in zip(asset_replacements, results):
+            coroutines = [self.get_or_download_asset(abs_url, depth) for _, _, abs_url in asset_replacements]
+            results = await asyncio.gather(*coroutines, return_exceptions=True)
+
+            for (tag, attr, abs_url), final_asset_url in zip(asset_replacements, results):
                 if isinstance(final_asset_url, Exception) or not final_asset_url:
-                    continue # Keep original if failed
+                    self.failed_urls.append(abs_url)
+                    continue  # Keep original if failed
                 tag[attr] = get_relative_url(local_url_path, final_asset_url)
             
         os.makedirs(os.path.dirname(final_fs_path), exist_ok=True)
@@ -348,8 +358,11 @@ class ReapV2Engine:
         fs_path, final_url_path, content_type = await self.download_asset(url)
         
         if not fs_path:
+            self.failed_urls.append(url)
             self.asset_futures[url].set_result(None)
             return
+
+        self.asset_deps[url] = []
 
         if content_type and 'text/css' in content_type and not self.fast_mode:
             with open(fs_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -362,6 +375,7 @@ class ReapV2Engine:
                 if not asset_val.startswith("data:"):
                     abs_url = normalize_url(urljoin(url, asset_val))
                     css_deps.append(abs_url)
+                    self.asset_deps[url].append(abs_url)
                 return match.group(0)
                 
             CSS_URL_PATTERN.sub(css_extract, css_text)
@@ -391,6 +405,8 @@ class ReapV2Engine:
 
     async def worker_loop(self):
         while True:
+            task_type = None
+            url = None
             try:
                 priority, task_type, url, depth = await self.task_queue.get()
                 if task_type == 'page':
@@ -399,8 +415,10 @@ class ReapV2Engine:
                     # Only process if future is not already done (coalescing check)
                     if not self.asset_futures[url].done():
                         await self.process_asset(url)
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
-                if task_type == 'asset' and url in self.asset_futures and not self.asset_futures[url].done():
+                if task_type == 'asset' and url and url in self.asset_futures and not self.asset_futures[url].done():
                     self.asset_futures[url].set_result(None)
             finally:
                 self.task_queue.task_done()
@@ -428,28 +446,57 @@ class ReapV2Engine:
         await self.close_session()
         self._generate_404()
         
+        # Generate unified manifest
+        build_timestamp = time.time()
+        
+        # Hash fingerprint calculation
+        assets_dir = os.path.join(self.output_dir, "assets")
+        assets_list = [p for p in os.listdir(assets_dir) if not p.startswith(".")] if os.path.exists(assets_dir) else []
+        build_hash_ctx = hashlib.sha256()
+        for a in sorted(assets_list): build_hash_ctx.update(a.encode())
+        for r in sorted(self.route_map.values()): build_hash_ctx.update(r.encode())
+        
+        manifest_path = os.path.join(self.output_dir, "manifest.json")
+        manifest_data = {
+            "version": __version__,
+            "timestamp": build_timestamp,
+            "build_hash": build_hash_ctx.hexdigest()[:16],
+            "entry": "index.html",
+            "mode": self.mode,
+            "base_path": "/",
+            "routes": list(self.visited),
+            "route_mapping": self.route_map,
+            "assets": assets_list,
+            "asset_dependencies": self.asset_deps
+        }
+        
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest_data, f, indent=2)
+            
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
-def archive_site(url, output_dir, mode="app", js_snapshot=False, fast_mode=False, threads=8):
-    if USE_RICH:
+def archive_site(url, output_dir, mode="app", js_snapshot=False, fast_mode=False, threads=8, verbose=True):
+    if USE_RICH and verbose:
         panel_content = (
             f"[bold gold3]Target URL:[/bold gold3] {url}\n"
             f"[bold gold3]Output Dir:[/bold gold3] {output_dir or urlparse(url).netloc}\n"
             f"[bold gold3]Mode:[/bold gold3] {mode}\n"
             f"[bold gold3]JS Snapshot:[/bold gold3] {'Enabled' if js_snapshot and not fast_mode else 'Disabled'}\n"
-            f"[bold gold3]Engine:[/bold gold3] v2.0 (Synchronized Pipeline)"
+            f"[bold gold3]Engine:[/bold gold3] v{__version__} (Smart Pipeline)"
         )
-        console.print(Panel(panel_content, title="[bold gold3]Reap v2.0[/bold gold3]", border_style="gold3", expand=False))
+        console.print(Panel(panel_content, title=f"[bold gold3]🌾 reap v{__version__}[/bold gold3]", border_style="gold3", expand=False))
         
     engine = ReapV2Engine(url, output_dir, mode, js_snapshot, fast_mode, threads)
     
-    if USE_RICH:
+    if USE_RICH and verbose:
         with console.status("[bold gold3]Reconstructing offline replica...", spinner="aesthetic"):
             asyncio.run(engine.run())
     else:
-        print(f"Scraping {url} with v2.0 engine...")
+        if verbose:
+            print(f"Scraping {url} with v{__version__} engine...")
         asyncio.run(engine.run())
         
-    print_msg("v2.0 Reconstruction completed successfully.", "success")
-    return engine.output_dir
+    if verbose:
+        print_msg(f"v{__version__} reconstruction completed successfully.", "success")
+    return engine.output_dir, engine.failed_urls

@@ -22,5 +22,9 @@ wheels/
 reap-engine.log
 wget-log
 
+# Virtual environments
+venv/
+.venv/
+
 # Internal Documents
 PROJECT.md
