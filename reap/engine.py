@@ -405,10 +405,12 @@ class ReapV2Engine:
 
     async def worker_loop(self):
         while True:
-            task_type = None
-            url = None
             try:
                 priority, task_type, url, depth = await self.task_queue.get()
+            except asyncio.CancelledError:
+                break
+                
+            try:
                 if task_type == 'page':
                     await self.process_page(url, depth)
                 elif task_type == 'asset':
@@ -416,6 +418,7 @@ class ReapV2Engine:
                     if not self.asset_futures[url].done():
                         await self.process_asset(url)
             except asyncio.CancelledError:
+                self.task_queue.task_done()
                 raise
             except Exception as e:
                 if task_type == 'asset' and url and url in self.asset_futures and not self.asset_futures[url].done():
@@ -425,6 +428,7 @@ class ReapV2Engine:
 
     def _generate_404(self):
         p404 = os.path.join(self.output_dir, "404.html")
+        os.makedirs(os.path.dirname(p404), exist_ok=True)
         html = f"""<!DOCTYPE html><html><head><title>Offline 404</title><style>body{{text-align:center;padding:50px;font-family:sans-serif;}}</style></head>
         <body><h1>Page Not Found</h1><p>This page was not downloaded during offline sync.</p>
         <a href="index.html">Return to Root</a></body></html>"""
