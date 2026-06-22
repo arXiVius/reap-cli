@@ -19,6 +19,10 @@ def parse_args():
     parser.add_argument("--watch", action="store_true", help="Monitor a site and diff against local archives")
     parser.add_argument("--download-now", action="store_true", help="Force download during a watch pass")
     
+    # v2 Engine Features
+    parser.add_argument("--mode", choices=["mirror", "app", "reader", "fast"], default="app", help="v2 Engine mode: mirror, app (default), reader, fast")
+    parser.add_argument("--js", action="store_true", help="Enable JS Snapshot mode (requires playwright)")
+
     # New Modular Features
     parser.add_argument("--clean", action="store_true", help="Privacy Shield: Strip third-party trackers & cookie overlays")
     parser.add_argument("--audit", action="store_true", help="Diagnostic Audit: Find broken links & assets in the offline copy")

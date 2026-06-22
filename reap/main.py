@@ -28,9 +28,9 @@ def main():
             check_changes(args.url, args.output)
             return
 
-        # Route 4: Core Engine Scraper
+        # Route 4: Core Engine Scraper (v2)
         from reap.engine import archive_site
-        output_dir = archive_site(args.url, args.output, args.fast, args.threads)
+        output_dir = archive_site(args.url, args.output, args.mode, args.js, args.fast, args.threads)
 
         # Post-Processing Chain
         if args.clean:
